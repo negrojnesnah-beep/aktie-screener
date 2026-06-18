@@ -549,7 +549,7 @@ def farv_scores(val):
 
 # --- FANE 1: OVERVÅGNINGS-PANEL ---
 with tab1:
-    st.subheader(f"Aktie Screener — Univers: {univers_valg} (2y fuld historik)")
+    st.subheader(f"Aktie Screener — Univers: {univers_valg} (2 års historik)")
     rows = []
     if not all_data:
         st.warning("Ingen gyldige data fundet.")
