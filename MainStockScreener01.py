@@ -57,24 +57,42 @@ STAMDATA_NAVNE = {
     'AAPL': 'Apple Inc.', 'MSFT': 'Microsoft Corp.', 'NVDA': 'NVIDIA Corp.', 
     'AMZN': 'Amazon.com Inc.', 'META': 'Meta Platforms', 'GOOGL': 'Alphabet Inc.', 
     'BRK-B': 'Berkshire Hathaway', 'LLY': 'Eli Lilly & Co.', 'AVGO': 'Broadcom Inc.', 
-    'TSLA': 'Tesla Inc.'
-}
+    'TSLA': 'Tesla Inc.',
+
+    # NASDAQ 40
+    'MSFT': 'Microsoft', 'AAPL': 'Apple', 'NVDA': 'NVIDIA', 'AMZN': 'Amazon',
+    'META': 'Meta Platforms', 'GOOGL': 'Alphabet A', 'GOOG': 'Alphabet C', 
+    'AVGO': 'Broadcom', 'TSLA': 'Tesla', 'COST': 'Costco',
+    'AMD': 'AMD', 'NFLX': 'Netflix', 'QCOM': 'Qualcomm', 'TMUS': 'T-Mobile US', 
+    'INTC': 'Intel', 'INTU': 'Intuit', 'AMGN': 'Amgen', 'TEX': 'Terex', 
+    'AMAT': 'Applied Materials', 'ISRG': 'Intuitive Surgical',
+    'HON': 'Honeywell', 'BKNG': 'Booking Holdings', 'VRTX': 'Vertex Pharm.', 
+    'PANW': 'Palo Alto Networks', 'GILD': 'Gilead Sciences', 'REGN': 'Regeneron', 
+    'LRCX': 'Lam Research', 'MELI': 'MercadoLibre', 'ADP': 'ADP', 'MU': 'Micron Tech',
+    'KLAC': 'KLA Corp', 'ADI': 'Analog Devices', 'MDLZ': 'Mondelez', 
+    'SNPS': 'Synopsys', 'CDNS': 'Cadence Design', 'ASML': 'ASML Holding', 
+    'CSCO': 'Cisco Systems', 'MAR': 'Marriott', 'ORLY': 'O\'Reilly Auto', 
+    'CTAS': 'Cintas'
+    }
 
 OMXC25_TICKERS = ['ALSYDB.CO', 'AMBU-B.CO', 'BAVA.CO', 'CARL-B.CO', 'COLO-B.CO', 'DANSKE.CO', 'DEMANT.CO', 'DSV.CO', 'FLS.CO', 'GMAB.CO', 'GN.CO', 'ISS.CO', 'JYSK.CO', 'MAERSK-A.CO', 'MAERSK-B.CO', 'NKT.CO', 'NSIS-B.CO', 'NOVO-B.CO', 'ORSTED.CO', 'PNDORA.CO', 'ROCK-B.CO', 'RBREW.CO', 'TRYG.CO', 'VWS.CO', 'ZEAL.CO']
 SP500_SAMPLE = ['AAPL', 'MSFT', 'NVDA', 'AMZN', 'META', 'GOOGL', 'BRK-B', 'LLY', 'AVGO', 'TSLA']
-DAX_TICKERS = [
-    'ADS.DE', 'AIR.DE', 'ALV.DE', 'BAS.DE', 'BAYN.DE', 'BMW.DE', 'CBK.DE', 'CON.DE', 
+DAX_TICKERS = ['ADS.DE', 'AIR.DE', 'ALV.DE', 'BAS.DE', 'BAYN.DE', 'BMW.DE', 'CBK.DE', 'CON.DE', 
     '1COV.DE', 'DB1.DE', 'DBK.DE', 'DHL.DE', 'DTE.DE', 'DTG.DE', 'EOAN.DE', 'FME.DE', 
     'FRE.DE', 'HEI.DE', 'HEN3.DE', 'HNR1.DE', 'IFX.DE', 'MBG.DE', 'MRK.DE', 'MTX.DE', 
     'MUV2.DE', 'PUM.DE', 'QIA.DE', 'RHM.DE', 'RWE.DE', 'SAP.DE', 'SIE.DE', 'ENR.DE', 
-    'SHL.DE', 'SRT3.DE', 'SY1.DE', 'VNA.DE', 'VOW3.DE', 'ZAL.DE'
-]
+    'SHL.DE', 'SRT3.DE', 'SY1.DE', 'VNA.DE', 'VOW3.DE', 'ZAL.DE']
+nasdaq40_tickers = [
+    "MSFT", "AAPL", "NVDA", "AMZN", "META", "GOOGL", "GOOG", "AVGO", "TSLA", "COST",
+    "AMD", "NFLX", "QCOM", "TMUS", "INTC", "INTU", "AMGN", "TEX", "AMAT", "ISRG",
+    "HON", "BKNG", "VRTX", "PANW", "GILD", "REGN", "LRCX", "MELI", "ADP", "MU",
+    "KLAC", "ADI", "MDLZ", "SNPS", "CDNS", "ASML", "CSCO", "MAR", "ORLY", "CTAS"]
 
 # --- SIDEBAR ---
 st.sidebar.header("⚙️ Dashboard Indstillinger")
 univers_valg = st.sidebar.selectbox(
     "Index eller inputmetode",
-    ["OMXC25 (Danmark)", "DAX (Tyskland — Komplet 40)", "S&P 500 (Uddrag)", "Brugerdefineret Tickerliste"],
+    ["OMXC25 (Danmark)", "DAX (Tyskland — Komplet 40)", "S&P 500 (Uddrag)", "NASDAQ 40", "Brugerdefineret Tickerliste"],
     index=0
 )
 
@@ -84,6 +102,8 @@ elif univers_valg == "DAX (Tyskland — Komplet 40)":
     valgte_tickers = DAX_TICKERS
 elif univers_valg == "S&P 500 (Uddrag)":
     valgte_tickers = SP500_SAMPLE
+elif univers_valg == "NASDAQ 40":   
+    valgte_tickers = nasdaq40_tickers
 else:
     bruger_input = st.sidebar.text_area("Indtast tickers (separeret med komma)", value="AAPL, NVDA, RHM.DE, NOVO-B.CO")
     valgte_tickers = [t.strip().upper() for t in bruger_input.split(",") if t.strip()]
