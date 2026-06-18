@@ -133,8 +133,12 @@ def single_ticker_download(t, period_setting):
     try:
         df = yf.download(t, period=period_setting, interval=FIXED_INTERVAL, auto_adjust=True, progress=False)
         if not df.empty and len(df) > 5:
+            # Robust oprydning af yfinance MultiIndex kolonner
             if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
+                if t in df.columns.get_level_values(0):
+                    df.columns = df.columns.get_level_values(1)
+                else:
+                    df.columns = df.columns.get_level_values(0)
             
             df.columns = [str(c).lower() for c in df.columns]
             
