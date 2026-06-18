@@ -73,7 +73,7 @@ DAX_TICKERS = [
 # --- SIDEBAR ---
 st.sidebar.header("⚙️ Dashboard Indstillinger")
 univers_valg = st.sidebar.selectbox(
-    "Indeks eller inputmetode",
+    "Index eller inputmetode",
     ["OMXC25 (Danmark)", "DAX (Tyskland — Komplet 40)", "S&P 500 (Uddrag)", "Brugerdefineret Tickerliste"],
     index=0
 )
@@ -89,7 +89,7 @@ else:
     valgte_tickers = [t.strip().upper() for t in bruger_input.split(",") if t.strip()]
 
 st.sidebar.write("---")
-st.sidebar.header("📅 Visuel Tidsramme")
+st.sidebar.header("📅 Tidsramme")
 visuel_periode = st.sidebar.select_slider(
     "Grafisk visning (Zoom)",
     options=["3m", "6m", "1y", "2y"],
@@ -536,7 +536,7 @@ def run_vectorized_backtest(data_dict, mode="Swing", min_score=75, target_mult=3
 # =========================================================================
 if "active_tab" not in st.session_state:
     st.session_state.active_tab = 0
-tab1, tab2, tab3 = st.tabs(["📊 Oversigt", "📈 Aktie analyse", "🧪 Backtesting & Optimering"])
+tab1, tab2, tab3 = st.tabs(["📊 Oversigt", "📈 Aktie analyse", "🧪 Backtesting"])
 
 def farv_scores(val):
     if isinstance(val, (int, float)):
@@ -549,7 +549,7 @@ def farv_scores(val):
 
 # --- FANE 1: OVERVÅGNINGS-PANEL ---
 with tab1:
-    st.subheader(f"Aktie Screener — Univers: {univers_valg} (Beregnet på 2y fuld historik)")
+    st.subheader(f"Aktie Screener — Univers: {univers_valg} (2y fuld historik)")
     rows = []
     if not all_data:
         st.warning("Ingen gyldige data fundet.")
@@ -624,7 +624,7 @@ with tab1:
         
         dato_stempel = datetime.date.today().strftime("%Y-%m-%d")
         st.download_button(
-            label="📥 Eksporter Multi-Scores til Excel", 
+            label="📥 Eksporter til Excel", 
             data=buffer.getvalue(), 
             file_name=f"AktieScreener_export_{dato_stempel}.xlsx",
             mime="application/vnd.ms-excel"
@@ -633,7 +633,7 @@ with tab1:
 # --- FANE 2: INDIVIDUEL AKTIEANALYSE ---
 with tab2:
     if aktive_univers_navne:
-        valgt_navn = st.selectbox("Vælg aktiv",sorted(list(aktive_univers_navne.keys())),key="analyse_aktiv")
+        valgt_navn = st.selectbox("Vælg aktie",sorted(list(aktive_univers_navne.keys())),key="analyse_aktiv")
         selected_ticker = aktive_univers_navne[valgt_navn]
         
         if selected_ticker not in st.session_state["scores_cache"]:
@@ -642,7 +642,7 @@ with tab2:
         res_analysis = st.session_state["scores_cache"][selected_ticker]
         
         if res_analysis:
-            horisont_valg = st.radio("Handels-horisont for risikostyring og indikatorparametre:",["Swing (1-4 uger)", "Position (1-3 mdr)"],horizontal=True,key="analyse_horisont")
+            horisont_valg = st.radio("Horisont for risikostyring og indikatorparametre:",["Swing (1-4 uger)", "Position (1-3 mdr)"],horizontal=True,key="analyse_horisont")
             
             if "Swing" in horisont_valg:
                 mat = res_analysis['swing']
@@ -666,7 +666,7 @@ with tab2:
             
             fig = make_subplots(
                 rows=3, cols=1, shared_xaxes=True, row_heights=[0.5, 0.25, 0.25], vertical_spacing=0.06,
-                subplot_titles=(f"Prisudvikling & Bollinger Bands — Vist tidsrum: {visuel_periode}", "MACD Momentum & Histogram", "RSI Momentum Oscillator")
+                subplot_titles=(f"Prisudvikling & Bollinger Bands — tidsrum: {visuel_periode}", "MACD Momentum & Histogram", "RSI Momentum Oscillator")
             )
             
             fig.add_trace(go.Candlestick(x=visuel_filter_df.index, open=visuel_filter_df['open'], high=visuel_filter_df['high'], low=visuel_filter_df['low'], close=visuel_filter_df['close'], name="OHLC"), row=1, col=1)
@@ -689,8 +689,8 @@ with tab2:
             
             # Række 1: Scores og tillid
             c1, c2, c3 = st.columns(3)
-            c1.metric("SWING SCORE", f"{int(round(res_analysis['swing_score']))} / 100")
-            c2.metric("POSITION SCORE", f"{int(round(res_analysis['position_score']))} / 100")
+            c1.metric("Swing Score", f"{int(round(res_analysis['swing_score']))} / 100")
+            c2.metric("Position Score", f"{int(round(res_analysis['position_score']))} / 100")
             c3.metric("Signal Confidence", conf_visning)
 
             # Række 2: Pris og niveauer
@@ -716,12 +716,12 @@ with tab2:
                 # Dynamisk valuta (.CO = DKK, .DE = EUR, andet = USD)
                 valuta = "DKK" if selected_ticker.endswith(".CO") else ("EUR" if selected_ticker.endswith(".DE") else "USD")
                 st.metric(
-                    label="Aktuel ATR", 
+                    label="ATR (Average True Range)", 
                     value=f"{aktuel_atr:.2f} {valuta}"
                 )
             
             st.write("---")
-            st.markdown(f"📊 **Aktuelt Candlestick Mønster:** `{res_analysis['candle']}`")
+            st.markdown(f"📊 **Candlestick Mønster:** `{res_analysis['candle']}`")
             st.write("") 
             
             if "🟢" in trigger_status: st.success(f"Taktisk Signal: {trigger_status} | Squeeze: {'⚡ Aktiv' if res_analysis['squeeze'] else 'Stabil'}")
@@ -730,21 +730,21 @@ with tab2:
 
 # --- FANE 3: STRATEGI-BACKTESTING ---
 with tab3:
-    st.subheader("🧪 Historisk Backtesting & Strategi-Optimering")
+    st.subheader("🧪 Historisk Backtesting & Strategi Optimering")
     
     cc1, cc2, cc3 = st.columns(3)
-    bt_mode = cc1.selectbox("Vælg strategi-spor til test/optimering",["Swing", "Position"],key="bt_mode")
-    bt_min_score = cc2.slider("Minimum Score for Købs-entry", 50, 90, 80, 5)
+    bt_mode = cc1.selectbox("Strategi-spor til test/optimering",["Swing", "Position"],key="bt_mode")
+    bt_min_score = cc2.slider("Minimum Position Score for Købs-entry", 50, 90, 80, 5)
     bt_capital = cc3.number_input("Startkapital (DKK)", value=100000, step=10000)
     
     cc4, cc5, cc6 = st.columns(3)
     bt_target_mult = cc4.slider("ATR Target Multiplikator", 1.5, 8.0, 3.5, 0.5)
     bt_sl_mult = cc5.slider("ATR Stop Loss Multiplikator", 1.0, 4.0, 2.0, 0.25)
-    bt_hold = cc6.slider("Maks holding period (Handelsdage)", 5, 60, 20, 5)
+    bt_hold = cc6.slider("Max hold periode (Handelsdage)", 5, 60, 20, 5)
     
     col_btn1, col_btn2 = st.columns(2)
-    run_normal = col_btn1.button("🚀 Kør Enkelt Historisk Backtest")
-    run_opt = col_btn2.button("🔍 Kør Automatisk Parameter Optimering")
+    run_normal = col_btn1.button("🚀 Kør Enkel Historisk Backtest")
+    run_opt = col_btn2.button("🔍 Kør Parameter Optimering")
     
     backtest_start_date = datetime.datetime.now() - datetime.timedelta(days=valgte_visuelle_dage)
     
