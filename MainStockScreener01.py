@@ -434,12 +434,60 @@ def beregn_dual_scores(df_raw):
             "t_pct": (((close_price + (atr_p * pos_target_mult)) / close_price) - 1) * 100, "sl_pct": (1 - ((close_price - (atr_p * pos_sl_mult)) / close_price)) * 100
         }
     }
+# --- NY HJÆLPEFUNKTION: Vektoriser beregn_dual_scores dag-for-dag ---
+def vectorize_scores_for_df(base_df):
+    """
+    Returnerer to pd.Series med dag-for-dag swing_score og position_score.
+    Kører beregn_dual_scores på historikken op til hver dag.
+    For performance: undgår dybe kopier hvor muligt og håndterer fejl robust.
+    """
+    # Minimum antal rækker for meningsfulde indikatorer
+    MIN_ROWS = 15
+
+    # Hurtige checks
+    if base_df is None or not isinstance(base_df, pd.DataFrame) or len(base_df) < MIN_ROWS:
+        return pd.Series(dtype=float), pd.Series(dtype=float)
+
+    n = len(base_df)
+    idx = base_df.index
+
+    swing_scores = [np.nan] * n
+    pos_scores = [np.nan] * n
+
+    # Startindeks hvor vi har nok historik til at beregne scores
+    start_i = MIN_ROWS - 1
+
+    # For at minimere overhead: genbrug slice-views i stedet for .copy() når muligt.
+    # Hvis beregn_dual_scores muterer input, skal du ændre til .copy().
+    for i in range(start_i, n):
+        try:
+            window_df = base_df.iloc[: i + 1]  # view, ikke copy
+            res = beregn_dual_scores(window_df)
+            if res is None:
+                swing_scores[i] = np.nan
+                pos_scores[i] = np.nan
+            else:
+                # beregn_dual_scores returnerer numeriske scores i topniveau
+                swing_scores[i] = res.get("swing_score", np.nan)
+                pos_scores[i] = res.get("position_score", np.nan)
+        except Exception:
+            # Hvis en enkelt dag fejler, log ikke til UI her (kalderen håndterer), men undgå at bryde loopet
+            swing_scores[i] = np.nan
+            pos_scores[i] = np.nan
+
+    # Konverter til pd.Series med samme index som input
+    swing_series = pd.Series(swing_scores, index=idx, dtype=float)
+    pos_series = pd.Series(pos_scores, index=idx, dtype=float)
+
+    # Fyld tidlige rækker med NaN (allerede sat), men returner som float-serier
+    return swing_series, pos_series
 
 # =========================================================================
 # 5. STRAGTIGT RIGTIG DATO-BASERET BACKTESTING (REEL PORTEFØLJESTYRING)
 # =========================================================================
-def run_vectorized_backtest(data_dict, mode="Swing", min_score=75, target_mult=3.5, sl_mult=1.5, holding_days=20, start_date=None):
-    # Træk og bearbejd signaler for alle aktier i universset, så de kan behandles kronologisk dags-for-dags
+
+def prepare_backtest_signals(data_dict, mode="Swing", min_score=75, start_date=None):
+    """ Beregner indikatorer og signaler ÉN gang før simulations-loops """
     aktie_data = {}
     alle_datoer = set()
     
@@ -466,17 +514,17 @@ def run_vectorized_backtest(data_dict, mode="Swing", min_score=75, target_mult=3
         aktie_data[ticker] = df
         alle_datoer.update(df.index.tolist())
         
-    kronologisk_tid = sorted(list(alle_datoer))
-    
-    # Initiering af porteføljestyring
-    kontant_beholdning = float(bt_capital) if 'bt_capital' in locals() else 100000.0
-    aktive_positioner = []  # Indeholder dicts af åbne trades
+    return aktie_data, sorted(list(alle_datoer))
+
+
+def run_vectorized_backtest_fast(aktie_data, kronologisk_tid, target_mult=3.5, sl_mult=1.5, holding_days=20, bt_capital=100000.0):
+    """ Lynhurtig portefølje-simulator, der udelukkende arbejder på præ-kalkulerede data """
+    kontant_beholdning = float(bt_capital)
+    aktive_positioner = []
     afsluttede_handler = []
     
-    # Kronologisk dags-loop (Simulerer virkeligheden dag for dag)
     for aktuel_dag in kronologisk_tid:
-        
-        # 1. Tjek og opdater eksisterende åbne positioner baseret på dagens markedsbevægelser
+        # 1. Tjek og opdater eksisterende åbne positioner
         overlevende_positioner = []
         for pos in aktive_positioner:
             tk = pos["Ticker"]
@@ -497,22 +545,19 @@ def run_vectorized_backtest(data_dict, mode="Swing", min_score=75, target_mult=3
             lukket = False
             exit_pris = dagens_bar["close"]
             
-            # Tjek Target
             if dagens_bar["high"] >= pos["Target_Price"]:
                 exit_pris = pos["Target_Price"]
                 lukket = True
-            # Tjek Stop Loss på dags-luk (Close)
             elif dagens_bar["close"] <= pos["Stop_Price"]:
                 exit_pris = pos["Stop_Price"]
                 lukket = True
-            # Tjek tidsudløb (Maks holding period)
             elif pos["Dage_Holdt"] >= holding_days:
                 exit_pris = dagens_bar["close"]
                 lukket = True
                 
             if lukket:
                 brutto_retur = pos["Givet_Kapital"] * (exit_pris / pos["Entry_Price"])
-                kontant_beholdning += brutto_retur  # Frigør kapitalen tilbage til din kasse
+                kontant_beholdning += brutto_retur
                 pnl_pct = ((exit_pris / pos["Entry_Price"]) - 1) * 100
                 
                 afsluttede_handler.append({
@@ -525,13 +570,10 @@ def run_vectorized_backtest(data_dict, mode="Swing", min_score=75, target_mult=3
                 
         aktive_positioner = overlevende_positioner
         
-        # 2. Tjek for nye købssignaler på denne specifikke dag
+        # 2. Tjek for nye købssignaler
         for ticker, df in aktie_data.items():
             if aktuel_dag in df.index and df.loc[aktuel_dag]["signal_entry"]:
-                # Beregn den specifikke risikoallokering (10% af den samlede REELLE kassebeholdning lige NU)
                 allokeret_indsats = kontant_beholdning * 0.10
-                
-                # Hvis kassen har for få kontanter tilbage, afvises handlen (Virkelighedstro porteføljebegrænsning)
                 if allokeret_indsats < 1000 or kontant_beholdning < allokeret_indsats:
                     continue
                     
@@ -543,7 +585,7 @@ def run_vectorized_backtest(data_dict, mode="Swing", min_score=75, target_mult=3
                 dynamic_t_mult = target_mult * (1.15 if natr > 3.0 else 1.0)
                 dynamic_sl_mult = sl_mult * (1.20 if natr > 3.0 else 1.0)
                 
-                kontant_beholdning -= allokeret_indsats # Træk pengene fysisk ud af kontoen
+                kontant_beholdning -= allokeret_indsats
                 
                 aktive_positioner.append({
                     "Ticker": ticker, "Entry_Dato": aktuel_dag, "Entry_Price": row["close"],
@@ -639,7 +681,7 @@ with tab1:
                     "Position Konfidens": st.column_config.TextColumn("Position Konfidens", width=120)
                 },
                 hide_index=True,
-                use_container_width=True # Fylder præcis bredden af 'tabel_col' ud
+                width="stretch" # Fylder præcis bredden af 'tabel_col' ud
             )
         
         buffer = BytesIO()
@@ -773,9 +815,16 @@ with tab3:
     backtest_start_date = datetime.datetime.now() - datetime.timedelta(days=valgte_visuelle_dage)
     
     if run_normal:
-        with st.spinner("Kværner historisk data..."):
-            trades_df = run_vectorized_backtest(all_data, mode=bt_mode, min_score=bt_min_score, target_mult=bt_target_mult, sl_mult=bt_sl_mult, holding_days=bt_hold, start_date=backtest_start_date)
+        with st.spinner("Præparerer markedsdata..."):
+            # Generer data og tidslinje ÉN gang
+            aktie_data, kronologisk_tid = prepare_backtest_signals(all_data, mode=bt_mode, min_score=bt_min_score, start_date=backtest_start_date)
             
+        if not aktie_data:
+            st.warning("Ingen historiske data tilgængelige.")
+        else:
+            with st.spinner("Kører portefølje simulation..."):
+                trades_df = run_vectorized_backtest_fast(aktie_data, kronologisk_tid, target_mult=bt_target_mult, sl_mult=bt_sl_mult, holding_days=bt_hold, bt_capital=bt_capital)
+                
             if trades_df.empty:
                 st.warning("Ingen historiske handler matchede dine kriterier i den valgte tidsperiode.")
             else:
@@ -795,55 +844,60 @@ with tab3:
                 total_return_pct = ((final_equity / bt_capital) - 1) * 100
                 eq_series = pd.Series(equity_curve)
                 max_dd = ((eq_series - eq_series.cummax()) / eq_series.cummax()).min() * 100
-                
-                # Beregn det gennemsnitlige afkast pr. handel
                 avg_return_pct = trades_df["Afkast %"].mean()
 
                 st.markdown("### 📊 Testresultater")
-                # Vi ændrer fra 5 til 6 kolonner for at gøre plads til den nye metrik
                 kpi1, kpi2, kpi3, kpi4, kpi5, kpi6 = st.columns(6)
                 kpi1.metric("Antal Handler", f"{total_trades}")
                 kpi2.metric("Win Rate", f"{win_rate:.1f}%")
-                kpi3.metric("Gns. pr. Trade", f"{avg_return_pct:+.2f}%")  # Den nye tilføjelse
+                kpi3.metric("Gns. pr. Trade", f"{avg_return_pct:+.2f}%")
                 kpi4.metric("Profit Factor", f"{profit_factor:.2f}")
                 kpi5.metric("Slutkapital", f"{final_equity:,.0f} DKK", f"{total_return_pct:+.1f}%")
                 kpi6.metric("Max Drawdown", f"{max_dd:.1f}%")
                 
                 fig_eq = go.Figure()
                 fig_eq.add_trace(go.Scatter(x=list(range(len(equity_curve))), y=equity_curve, line=dict(color="#2ecc71", width=2.5)))
-                fig_eq.update_layout(title="Egenkapitaludvikling (Reel Porteføljestyring)", template="plotly_dark", height=350)
+                fig_eq.update_layout(title="Egenkapitaludvikling (Optimerede data)", template="plotly_dark", height=350)
                 st.plotly_chart(fig_eq, width="stretch")
 
     if run_opt:
-        with st.spinner("🤖 Kører Grid-Search optimering..."):
-            target_range = [2.5, 3.0, 3.5, 4.0, 4.5]
-            stop_range = [1.25, 1.5, 1.75, 2.0]
-            opt_results = []
+        with st.spinner("🤖 Trin 1: Præparerer og låser markedsdata for universet..."):
+            # Her sker magien: Vi beregner kun indikatorer ÉN gang for alle 20 tests!
+            aktie_data, kronologisk_tid = prepare_backtest_signals(all_data, mode=bt_mode, min_score=bt_min_score, start_date=backtest_start_date)
             
-            for t_mult in target_range:
-                for s_mult in stop_range:
-                    t_df = run_vectorized_backtest(all_data, mode=bt_mode, min_score=bt_min_score, target_mult=t_mult, sl_mult=s_mult, holding_days=bt_hold, start_date=backtest_start_date)
-                    if not t_df.empty:
-                        t_trades = len(t_df)
-                        t_win_rate = (len(t_df[t_df["Afkast %"] > 0]) / t_trades) * 100
-                        t_gain = t_df[t_df["Afkast %"] > 0]["Gevinst DKK"].sum()
-                        t_loss = abs(t_df[t_df["Afkast %"] <= 0]["Gevinst DKK"].sum())
-                        t_pf = t_gain / (t_loss if t_loss > 0 else 1.0)
-                        
-                        eq = bt_capital + t_df["Gevinst DKK"].sum()
-                        ret_pct = ((eq / bt_capital) - 1) * 100
-                        
-                        opt_results.append({
-                            "Target Mult": t_mult, "Stop Mult": s_mult, "Antal Trades": t_trades,
-                            "Win Rate": f"{t_win_rate:.1f}%", "Profit Factor": round(t_pf, 2),
-                            "Slutafkast %": round(ret_pct, 1), "Slutkapital DKK": int(eq)
-                        })
-            
-            if not opt_results:
-                st.error("Kunne ikke optimere. Ingenting matchede dine kriterier i dette tidsinterval.")
-            else:
-                opt_df = pd.DataFrame(opt_results).sort_values(by="Profit Factor", ascending=False)
-                st.success("🎯 Optimering fuldført!")
-                vinder = opt_df.iloc[0]
-                st.info(f"🏆 **ANBEFALET OPSÆTNING:** Sæt dit Target til **{vinder['Target Mult']}x ATR** og dit Stop Loss til **{vinder['Stop Mult']}x ATR**. Det gav en Profit Factor på **{vinder['Profit Factor']}** under trailing-betingelser.")
-                st.dataframe(opt_df, column_config={"Slutkapital DKK": st.column_config.NumberColumn("Slutkapital DKK", format="%d DKK")}, hide_index=True, width="stretch")
+        if not aktie_data:
+            st.error("Ingen data at optimere på.")
+        else:
+            with st.spinner("🤖 Trin 2: Afvikler lynhurtig Grid-Search på tværs af parametre..."):
+                target_range = [2.5, 3.0, 3.5, 4.0, 4.5]
+                stop_range = [1.25, 1.5, 1.75, 2.0]
+                opt_results = []
+                
+                for t_mult in target_range:
+                    for s_mult in stop_range:
+                        # Kalder den ultrahurtige simuleringsmotor uden spild-beregninger
+                        t_df = run_vectorized_backtest_fast(aktie_data, kronologisk_tid, target_mult=t_mult, sl_mult=s_mult, holding_days=bt_hold, bt_capital=bt_capital)
+                        if not t_df.empty:
+                            t_trades = len(t_df)
+                            t_win_rate = (len(t_df[t_df["Afkast %"] > 0]) / t_trades) * 100
+                            t_gain = t_df[t_df["Afkast %"] > 0]["Gevinst DKK"].sum()
+                            t_loss = abs(t_df[t_df["Afkast %"] <= 0]["Gevinst DKK"].sum())
+                            t_pf = t_gain / (t_loss if t_loss > 0 else 1.0)
+                            
+                            eq = bt_capital + t_df["Gevinst DKK"].sum()
+                            ret_pct = ((eq / bt_capital) - 1) * 100
+                            
+                            opt_results.append({
+                                "Target Mult": t_mult, "Stop Mult": s_mult, "Antal Trades": t_trades,
+                                "Win Rate": f"{t_win_rate:.1f}%", "Profit Factor": round(t_pf, 2),
+                                "Slutafkast %": round(ret_pct, 1), "Slutkapital DKK": int(eq)
+                            })
+                
+                if not opt_results:
+                    st.error("Kunne ikke optimere. Ingenting matchede dine kriterier i dette tidsinterval.")
+                else:
+                    opt_df = pd.DataFrame(opt_results).sort_values(by="Profit Factor", ascending=False)
+                    st.success("🎯 Optimering fuldført på få sekunder!")
+                    vinder = opt_df.iloc[0]
+                    st.info(f"🏆 **ANBEFALET OPSÆTNING:** Sæt dit Target til **{vinder['Target Mult']}x ATR** og dit Stop Loss til **{vinder['Stop Mult']}x ATR**. Det gav en Profit Factor på **{vinder['Profit Factor']}** under trailing-betingelser.")
+                    st.dataframe(opt_df, column_config={"Slutkapital DKK": st.column_config.NumberColumn("Slutkapital DKK", format="%d DKK")}, hide_index=True, width="stretch")
