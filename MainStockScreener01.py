@@ -73,7 +73,7 @@ STAMDATA_NAVNE = {
     'SNPS': 'Synopsys', 'CDNS': 'Cadence Design', 'ASML': 'ASML Holding', 
     'CSCO': 'Cisco Systems', 'MAR': 'Marriott', 'ORLY': 'O\'Reilly Auto', 
     'CTAS': 'Cintas'
-    }
+}
 
 OMXC25_TICKERS = ['ALSYDB.CO', 'AMBU-B.CO', 'BAVA.CO', 'CARL-B.CO', 'COLO-B.CO', 'DANSKE.CO', 'DEMANT.CO', 'DSV.CO', 'FLS.CO', 'GMAB.CO', 'GN.CO', 'ISS.CO', 'JYSK.CO', 'MAERSK-A.CO', 'MAERSK-B.CO', 'NKT.CO', 'NSIS-B.CO', 'NOVO-B.CO', 'ORSTED.CO', 'PNDORA.CO', 'ROCK-B.CO', 'RBREW.CO', 'TRYG.CO', 'VWS.CO', 'ZEAL.CO']
 SP500_SAMPLE = ['AAPL', 'MSFT', 'NVDA', 'AMZN', 'META', 'GOOGL', 'BRK-B', 'LLY', 'AVGO', 'TSLA']
@@ -117,11 +117,9 @@ visuel_periode = st.sidebar.select_slider(
     key="hoved_visuel_tidsramme_slider" 
 )
 
-# Filter-mapping til at skære i data bagefter
 visuel_dage_mapping = {"3m": 90, "6m": 180, "1y": 365, "2y": 730}
 valgte_visuelle_dage = visuel_dage_mapping[visuel_periode]
 
-# --- PLACERING AF COPYRIGHT BLUE_SOX (SIDEBAR BUND) ---
 st.sidebar.write("---")
 st.sidebar.caption("© 2026 BlueSox. All rights reserved.")
 univers_navne = {STAMDATA_NAVNE.get(t, t): t for t in valgte_tickers}
@@ -133,7 +131,6 @@ def single_ticker_download(t, period_setting):
     try:
         df = yf.download(t, period=period_setting, interval=FIXED_INTERVAL, auto_adjust=True, progress=False)
         if not df.empty and len(df) > 5:
-            # Robust oprydning af yfinance MultiIndex kolonner
             if isinstance(df.columns, pd.MultiIndex):
                 if t in df.columns.get_level_values(0):
                     df.columns = df.columns.get_level_values(1)
@@ -192,9 +189,6 @@ if "current_state_key" not in st.session_state or st.session_state["current_stat
         st.session_state["all_data"] = download_data_from_api(valgte_tickers, DATA_CALC_PERIOD)
         st.session_state["current_state_key"] = state_key
         st.session_state["scores_cache"] = {}
-
-if "scores_cache" not in st.session_state:
-    st.session_state["scores_cache"] = {}
 
 all_data = st.session_state["all_data"]
 aktive_univers_navne = {navn: ticker for navn, ticker in univers_navne.items() if ticker in all_data}
@@ -301,10 +295,12 @@ def beregn_alle_indikatorer(df):
     df['bb_upper'] = df['20ma'] + (2 * df['std20'].fillna(0))
     df['bb_lower'] = df['20ma'] - (2 * df['std20'].fillna(0))
 
+    # --- SWING PARAMETRE (KORTERE HORISONT) ---
     gain_s = delta.where(delta > 0, 0).rolling(min(7, n_len-1)).mean()
     loss_s = (-delta.where(delta < 0, 0)).rolling(min(7, n_len-1)).mean()
     df["rsi_swing"] = 100 - (100 / (1 + (gain_s / (loss_s + 1e-10))))
     
+    # Stram stram MACD (8, 17, 5)
     df["ema8"] = df["close"].ewm(span=min(8, n_len)).mean()
     df["ema17"] = df["close"].ewm(span=min(17, n_len)).mean()
     df["macd_swing"] = df["ema8"] - df["ema17"]
@@ -312,14 +308,19 @@ def beregn_alle_indikatorer(df):
     df["macd_swing_hist"] = df["macd_swing"] - df["signal_swing"]
     df["atr_swing"] = tr.rolling(min(10, n_len-1)).mean()
     
+    # Kortsigtet 10-dages ROC til Swing-sporet
+    df["roc_swing"] = ((df["close"] - df["close"].shift(min(10, n_len-1))) / (df["close"].shift(min(10, n_len-1)) + 1e-10)) * 100
+    
     plus_di_s = 100 * (df['plus_dm'].rolling(min(10, n_len-1)).mean() / (tr.rolling(min(10, n_len-1)).mean() + 1e-10))
     minus_di_s = 100 * (df['minus_dm'].rolling(min(10, n_len-1)).mean() / (tr.rolling(min(10, n_len-1)).mean() + 1e-10))
     df['adx_swing'] = (100 * (plus_di_s - minus_di_s).abs() / (plus_di_s + minus_di_s + 1e-10)).rolling(min(10, n_len-1)).mean()
 
+    # --- POSITION PARAMETRE (MELLEMLANG HORISONT) ---
     gain_p = delta.where(delta > 0, 0).rolling(min(14, n_len-1)).mean()
     loss_p = (-delta.where(delta < 0, 0)).rolling(min(14, n_len-1)).mean()
     df["rsi_pos"] = 100 - (100 / (1 + (gain_p / (loss_p + 1e-10))))
     
+    # Standard mellemlang MACD (12, 26, 9)
     df["ema12"] = df["close"].ewm(span=min(12, n_len)).mean()
     df["ema26"] = df["close"].ewm(span=min(26, n_len)).mean()
     df["macd_pos"] = df["ema12"] - df["ema26"]
@@ -330,15 +331,15 @@ def beregn_alle_indikatorer(df):
     plus_di_p = 100 * (df['plus_dm'].rolling(min(14, n_len-1)).mean() / (tr.rolling(min(14, n_len-1)).mean() + 1e-10))
     minus_di_p = 100 * (df['minus_dm'].rolling(min(14, n_len-1)).mean() / (tr.rolling(min(14, n_len-1)).mean() + 1e-10))
     df['adx_pos'] = (100 * (plus_di_p - minus_di_p).abs() / (plus_di_p + minus_di_p + 1e-10)).rolling(min(14, n_len-1)).mean()
-    df["roc_pos"] = ((df["close"] - df["close"].shift(min(30, n_len-1))) / (df["close"].shift(min(30, n_len-1)) + 1e-10)) * 100
+    
+    # Mellemlang 20-dages ROC låst til positions-analyse
+    df["roc_pos"] = ((df["close"] - df["close"].shift(min(20, n_len-1))) / (df["close"].shift(min(20, n_len-1)) + 1e-10)) * 100
 
     df["obv"] = beregn_obv(df)
     df["obv_ma10"] = df["obv"].rolling(min(10, n_len)).mean()
     df['vol_ema_swing'] = df['volume'].ewm(span=14, adjust=False).mean()
     df['vol_ma30_pos'] = df['volume'].rolling(min(30, n_len)).mean()
     df["smoothed"] = safe_savgol(df["close"])
-
-    # Tilføjet NATR (Normalized ATR i %) til volatilitetsstyring af volumen-kravet
     df["natr_pos"] = (df["atr_pos"] / (df["close"] + 1e-10)) * 100
 
     return df
@@ -434,65 +435,17 @@ def beregn_dual_scores(df_raw):
             "t_pct": (((close_price + (atr_p * pos_target_mult)) / close_price) - 1) * 100, "sl_pct": (1 - ((close_price - (atr_p * pos_sl_mult)) / close_price)) * 100
         }
     }
-# --- NY HJÆLPEFUNKTION: Vektoriser beregn_dual_scores dag-for-dag ---
-def vectorize_scores_for_df(base_df):
-    """
-    Returnerer to pd.Series med dag-for-dag swing_score og position_score.
-    Kører beregn_dual_scores på historikken op til hver dag.
-    For performance: undgår dybe kopier hvor muligt og håndterer fejl robust.
-    """
-    # Minimum antal rækker for meningsfulde indikatorer
-    MIN_ROWS = 15
-
-    # Hurtige checks
-    if base_df is None or not isinstance(base_df, pd.DataFrame) or len(base_df) < MIN_ROWS:
-        return pd.Series(dtype=float), pd.Series(dtype=float)
-
-    n = len(base_df)
-    idx = base_df.index
-
-    swing_scores = [np.nan] * n
-    pos_scores = [np.nan] * n
-
-    # Startindeks hvor vi har nok historik til at beregne scores
-    start_i = MIN_ROWS - 1
-
-    # For at minimere overhead: genbrug slice-views i stedet for .copy() når muligt.
-    # Hvis beregn_dual_scores muterer input, skal du ændre til .copy().
-    for i in range(start_i, n):
-        try:
-            window_df = base_df.iloc[: i + 1]  # view, ikke copy
-            res = beregn_dual_scores(window_df)
-            if res is None:
-                swing_scores[i] = np.nan
-                pos_scores[i] = np.nan
-            else:
-                # beregn_dual_scores returnerer numeriske scores i topniveau
-                swing_scores[i] = res.get("swing_score", np.nan)
-                pos_scores[i] = res.get("position_score", np.nan)
-        except Exception:
-            # Hvis en enkelt dag fejler, log ikke til UI her (kalderen håndterer), men undgå at bryde loopet
-            swing_scores[i] = np.nan
-            pos_scores[i] = np.nan
-
-    # Konverter til pd.Series med samme index som input
-    swing_series = pd.Series(swing_scores, index=idx, dtype=float)
-    pos_series = pd.Series(pos_scores, index=idx, dtype=float)
-
-    # Fyld tidlige rækker med NaN (allerede sat), men returner som float-serier
-    return swing_series, pos_series
 
 # =========================================================================
 # 5. STRAGTIGT RIGTIG DATO-BASERET BACKTESTING (REEL PORTEFØLJESTYRING)
 # =========================================================================
-
-def prepare_backtest_signals(data_dict, mode="Swing", min_score=75, start_date=None):
-    """ Beregner indikatorer og signaler ÉN gang før simulations-loops """
+def run_vectorized_backtest(data_dict, mode="Swing", min_score=75, target_mult=3.5, sl_mult=1.5, holding_days=20, start_date=None):
     aktie_data = {}
     alle_datoer = set()
     
     for ticker, base_df in data_dict.items():
         if len(base_df) < 30: continue
+        
         df = beregn_alle_indikatorer(base_df)
         if start_date:
             df = df[df.index >= start_date]
@@ -502,30 +455,40 @@ def prepare_backtest_signals(data_dict, mode="Swing", min_score=75, start_date=N
             c_rsi = np.where((df["rsi_swing"] >= 60) & (df["rsi_swing"] <= 75), 100, np.where((df["rsi_swing"] >= 45) & (df["rsi_swing"] < 60), 75, np.where((df["rsi_swing"] >= 30) & (df["rsi_swing"] < 45), 40, 15)))
             c_macd = np.where((df["macd_swing"] > df["signal_swing"]) & (df["macd_swing_hist"] > 0), 100, 20)
             c_trend = np.where(df["close"] > df["20ma"], 75, 25)
-            df["final_score"] = (c_rsi * 0.3) + (c_macd * 0.3) + (c_trend * 0.4)
+            c_roc = np.where(df["roc_swing"] > 0, 100, 20)
+            
+            df["final_score"] = (c_rsi * 0.25) + (c_macd * 0.25) + (c_trend * 0.25) + (c_roc * 0.25)
             df["atr_used"] = df["atr_swing"]
         else:
-            c_trend = np.where((df["close"] > df["20ma"]) & (df["20ma"] > df["50ma"]), 100, 30)
-            c_rsi = np.where(df["rsi_pos"] > 50, 80, 20)
-            df["final_score"] = (c_trend * 0.6) + (c_rsi * 0.4)
+            c_trend = np.where((df["close"] > df["20ma"]) & (df["20ma"] > df["50ma"]) & (df["50ma"] > df["200ma"]), 100, 30)
+            c_rsi = np.where((df["rsi_pos"] >= 55) & (df["rsi_pos"] <= 75), 100, 40)
+            c_macd = np.where((df["macd_pos"] > df["signal_pos"]), 100, 20)
+            c_roc = np.where(df["roc_pos"] > 0, 100, 20)
+            
+            df["final_score"] = (c_trend * 0.40) + (c_rsi * 0.20) + (c_macd * 0.20) + (c_roc * 0.20)
             df["atr_used"] = df["atr_pos"]
 
         df["signal_entry"] = (df["final_score"] >= min_score) & (df["final_score"].shift(1) < min_score)
+        df["atr_used"] = df["atr_used"].fillna(df["close"] * 0.02) 
+        
         aktie_data[ticker] = df
         alle_datoer.update(df.index.tolist())
         
-    return aktie_data, sorted(list(alle_datoer))
-
-
-def run_vectorized_backtest_fast(aktie_data, kronologisk_tid, target_mult=3.5, sl_mult=1.5, holding_days=20, bt_capital=100000.0):
-    """ Lynhurtig portefølje-simulator, der udelukkende arbejder på præ-kalkulerede data """
-    kontant_beholdning = float(bt_capital)
-    aktive_positioner = []
+    kronologisk_tid = sorted(list(alle_datoer))
+    
+    start_kapital = float(bt_capital) if 'bt_capital' in locals() else 100000.0
+    kontant_beholdning = start_kapital
+    aktive_positioner = []  
     afsluttede_handler = []
     
+    # VI SÆTTER EN FAST ALLOKERING: Hvert trade fylder 20% af din startkapital (f.eks. 20.000 kr.)
+    # Det tillader op til 5 samtidige handler og fuld udnyttelse af pengene.
+    FAST_TRADE_BELOEB = start_kapital * 0.20
+    
     for aktuel_dag in kronologisk_tid:
-        # 1. Tjek og opdater eksisterende åbne positioner
         overlevende_positioner = []
+        
+        # 1. EXIT TJEK
         for pos in aktive_positioner:
             tk = pos["Ticker"]
             if aktuel_dag not in aktie_data[tk].index:
@@ -535,9 +498,9 @@ def run_vectorized_backtest_fast(aktie_data, kronologisk_tid, target_mult=3.5, s
             dagens_bar = aktie_data[tk].loc[aktuel_dag]
             pos["Dage_Holdt"] += 1
             
-            # Opdater Chandelier Trailing Stop
-            if dagens_bar["high"] > pos["Highest_High"]:
-                pos["Highest_High"] = dagens_bar["high"]
+            # Giv dit trailing stop mere elastik (tjekker ud fra lukketid frem for dagens absolutte bund for at undgå whipsaws)
+            if dagens_bar["close"] > pos["Highest_High"]:
+                pos["Highest_High"] = dagens_bar["close"]
                 new_stop = pos["Highest_High"] - (dagens_bar["atr_used"] * pos["SL_Mult"])
                 if new_stop > pos["Stop_Price"]:
                     pos["Stop_Price"] = new_stop
@@ -557,7 +520,7 @@ def run_vectorized_backtest_fast(aktie_data, kronologisk_tid, target_mult=3.5, s
                 
             if lukket:
                 brutto_retur = pos["Givet_Kapital"] * (exit_pris / pos["Entry_Price"])
-                kontant_beholdning += brutto_retur
+                kontant_beholdning += brutto_retur  
                 pnl_pct = ((exit_pris / pos["Entry_Price"]) - 1) * 100
                 
                 afsluttede_handler.append({
@@ -570,11 +533,19 @@ def run_vectorized_backtest_fast(aktie_data, kronologisk_tid, target_mult=3.5, s
                 
         aktive_positioner = overlevende_positioner
         
-        # 2. Tjek for nye købssignaler
+        # 2. ENTRY TJEK
         for ticker, df in aktie_data.items():
             if aktuel_dag in df.index and df.loc[aktuel_dag]["signal_entry"]:
-                allokeret_indsats = kontant_beholdning * 0.10
-                if allokeret_indsats < 1000 or kontant_beholdning < allokeret_indsats:
+                
+                # Hvis vi har kontanter nok, bruger vi det faste beløb (så pengene reelt arbejder)
+                if kontant_beholdning >= FAST_TRADE_BELOEB:
+                    allokeret_indsats = FAST_TRADE_BELOEB
+                elif kontant_beholdning > 5000:
+                    allokeret_indsats = kontant_beholdning  # Brug resten hvis der er en sjat tilbage
+                else:
+                    continue
+                
+                if any(p["Ticker"] == ticker for p in aktive_positioner):
                     continue
                     
                 row = df.loc[aktuel_dag]
@@ -585,13 +556,13 @@ def run_vectorized_backtest_fast(aktie_data, kronologisk_tid, target_mult=3.5, s
                 dynamic_t_mult = target_mult * (1.15 if natr > 3.0 else 1.0)
                 dynamic_sl_mult = sl_mult * (1.20 if natr > 3.0 else 1.0)
                 
-                kontant_beholdning -= allokeret_indsats
+                kontant_beholdning -= allokeret_indsats 
                 
                 aktive_positioner.append({
                     "Ticker": ticker, "Entry_Dato": aktuel_dag, "Entry_Price": row["close"],
                     "Target_Price": row["close"] + (atr_val * dynamic_t_mult),
                     "Stop_Price": row["close"] - (atr_val * dynamic_sl_mult),
-                    "Highest_High": row["high"], "SL_Mult": dynamic_sl_mult,
+                    "Highest_High": row["close"], "SL_Mult": dynamic_sl_mult,
                     "Givet_Kapital": allokeret_indsats, "Dage_Holdt": 0
                 })
                 
@@ -628,29 +599,25 @@ with tab1:
             if res_overview:
                 basis_navn = STAMDATA_NAVNE.get(t, t)
                 
-                # --- EVALUERING AF FORBEDRET FORSLAG (1): Volatilitets-justeret Volumen-krav (NATR) ---
                 current_natr = res_overview["natr_pos"]
                 if current_natr < 2.0:
-                    dynamic_vol_thresh = 1.1   # Tæt squeeze kræver mindre volumen for udbrud
+                    dynamic_vol_thresh = 1.1   
                 elif current_natr > 4.0:
-                    dynamic_vol_thresh = 1.4   # Høj volatilitet kræver kraftigere institutionel volumen
+                    dynamic_vol_thresh = 1.4   
                 else:
-                    dynamic_vol_thresh = 1.2   # Standard threshold
+                    dynamic_vol_thresh = 1.2   
                 
-                # Tjek de fire individuelle del-betingelser
                 cond1 = res_overview["position_score"] > 85
                 cond2 = res_overview["adx_pos"] > 25
                 cond3 = 55 < res_overview["rsi_pos"] < 75
                 cond4 = res_overview["vol_ratio_pos"] > dynamic_vol_thresh
                 
-                # Optæl hvor mange betingelser der er opfyldt
                 betingelser_opfyldt = sum([cond1, cond2, cond3, cond4])
                 
-                # --- EVALUERING AF FORBEDRET FORSLAG (2): Guld-scenarie vs Sølv-scenarie ---
                 if betingelser_opfyldt == 4:
-                     visnings_navn = f"{basis_navn} 🥇"  # Guldscenarie (4/4 betingelser)
+                     visnings_navn = f"{basis_navn} 🥇"  
                 elif betingelser_opfyldt == 3:
-                    visnings_navn = f"{basis_navn} 🥈"  # Sølvscenarie (3/4 betingelser)
+                    visnings_navn = f"{basis_navn} 🥈"  
                 else:
                      visnings_navn = basis_navn
                 
@@ -665,8 +632,6 @@ with tab1:
         
     if rows:
         screener_df = pd.DataFrame(rows).sort_values(by="Position Score (1-3 mdr)", ascending=False)
-        
-        # Vi holder fast i kolonne-opdelingen, så tabellen forbliver kompakt i venstre side
         tabel_col, luft_col = st.columns([3, 2])
         
         with tabel_col:
@@ -681,7 +646,7 @@ with tab1:
                     "Position Konfidens": st.column_config.TextColumn("Position Konfidens", width=120)
                 },
                 hide_index=True,
-                width="stretch" # Fylder præcis bredden af 'tabel_col' ud
+                width='stretch'
             )
         
         buffer = BytesIO()
@@ -715,14 +680,12 @@ with tab2:
                 conf_visning = res_analysis['confidence_swing']
                 v_ratio_visning = res_analysis['vol_ratio_swing']
                 macd_col, sig_col, rsi_col = 'macd_swing', 'signal_swing', 'rsi_swing'
-                # Hent den rå swing ATR fra dataframet
                 aktuel_atr = res_analysis['df']['atr_swing'].iloc[-1]
             else:
                 mat = res_analysis['position']
                 conf_visning = res_analysis['confidence_pos']
                 v_ratio_visning = res_analysis['vol_ratio_pos']
                 macd_col, sig_col, rsi_col = 'macd_pos', 'signal_pos', 'rsi_pos'
-                # Hent den rå position ATR fra dataframet
                 aktuel_atr = res_analysis['df']['atr_pos'].iloc[-1]
 
             full_df = res_analysis["df"].copy()
@@ -753,38 +716,25 @@ with tab2:
             st.write("---")
             st.subheader("🎯 Risikostyring & Taktiske Nøgletal")
             
-            # Række 1: Scores og tillid
             c1, c2, c3 = st.columns(3)
             c1.metric("Swing Score", f"{int(round(res_analysis['swing_score']))} / 100")
             c2.metric("Position Score", f"{int(round(res_analysis['position_score']))} / 100")
             c3.metric("Signal Confidence", conf_visning)
 
-            # Række 2: Pris og niveauer
             c5, c6, c7, c8 = st.columns(4)
             c5.metric("Nuværende Pris", f"{res_analysis['close']:.1f}")
             c6.metric("Kurstarget", f"{mat['target']:.1f}", f"+{mat['t_pct']:.1f}%")
             c7.metric("Stop Loss", f"{mat['sl']:.1f}", f"-{mat['sl_pct']:.1f}%")
             c8.metric("Risk/Reward", f"1 : {mat['rr']:.2f}")
             
-            # Række 3: Volumen Ratio og den NYE ATR side om side
             st.write("")
-            
-            # Vi laver 3 kolonner, hvor den sidste er bred (2) og fungerer som tom plads til højre.
-            # Det tvinger de to første metrics helt til venstre under hinanden.
             vol_col, atr_col, _ = st.columns([1, 1, 2])
             
             with vol_col:
-                st.metric(
-                    label="Volumen Ratio", 
-                    value=f"{v_ratio_visning:.2f}x"
-                )
+                st.metric(label="Volumen Ratio", value=f"{v_ratio_visning:.2f}x")
             with atr_col:
-                # Dynamisk valuta (.CO = DKK, .DE = EUR, andet = USD)
                 valuta = "DKK" if selected_ticker.endswith(".CO") else ("EUR" if selected_ticker.endswith(".DE") else "USD")
-                st.metric(
-                    label="ATR (Average True Range)", 
-                    value=f"{aktuel_atr:.2f} {valuta}"
-                )
+                st.metric(label="ATR (Average True Range)", value=f"{aktuel_atr:.2f} {valuta}")
             
             st.write("---")
             st.markdown(f"📊 **Candlestick Mønster:** `{res_analysis['candle']}`")
@@ -815,16 +765,9 @@ with tab3:
     backtest_start_date = datetime.datetime.now() - datetime.timedelta(days=valgte_visuelle_dage)
     
     if run_normal:
-        with st.spinner("Præparerer markedsdata..."):
-            # Generer data og tidslinje ÉN gang
-            aktie_data, kronologisk_tid = prepare_backtest_signals(all_data, mode=bt_mode, min_score=bt_min_score, start_date=backtest_start_date)
+        with st.spinner("Kværner historisk data..."):
+            trades_df = run_vectorized_backtest(all_data, mode=bt_mode, min_score=bt_min_score, target_mult=bt_target_mult, sl_mult=bt_sl_mult, holding_days=bt_hold, start_date=backtest_start_date)
             
-        if not aktie_data:
-            st.warning("Ingen historiske data tilgængelige.")
-        else:
-            with st.spinner("Kører portefølje simulation..."):
-                trades_df = run_vectorized_backtest_fast(aktie_data, kronologisk_tid, target_mult=bt_target_mult, sl_mult=bt_sl_mult, holding_days=bt_hold, bt_capital=bt_capital)
-                
             if trades_df.empty:
                 st.warning("Ingen historiske handler matchede dine kriterier i den valgte tidsperiode.")
             else:
@@ -844,60 +787,56 @@ with tab3:
                 total_return_pct = ((final_equity / bt_capital) - 1) * 100
                 eq_series = pd.Series(equity_curve)
                 max_dd = ((eq_series - eq_series.cummax()) / eq_series.cummax()).min() * 100
+                
                 avg_return_pct = trades_df["Afkast %"].mean()
 
                 st.markdown("### 📊 Testresultater")
                 kpi1, kpi2, kpi3, kpi4, kpi5, kpi6 = st.columns(6)
                 kpi1.metric("Antal Handler", f"{total_trades}")
                 kpi2.metric("Win Rate", f"{win_rate:.1f}%")
-                kpi3.metric("Gns. pr. Trade", f"{avg_return_pct:+.2f}%")
+                kpi3.metric("Gns. pr. Trade", f"{avg_return_pct:+.2f}%")  
                 kpi4.metric("Profit Factor", f"{profit_factor:.2f}")
                 kpi5.metric("Slutkapital", f"{final_equity:,.0f} DKK", f"{total_return_pct:+.1f}%")
                 kpi6.metric("Max Drawdown", f"{max_dd:.1f}%")
                 
                 fig_eq = go.Figure()
                 fig_eq.add_trace(go.Scatter(x=list(range(len(equity_curve))), y=equity_curve, line=dict(color="#2ecc71", width=2.5)))
-                fig_eq.update_layout(title="Egenkapitaludvikling (Optimerede data)", template="plotly_dark", height=350)
+                fig_eq.update_layout(title="Egenkapitaludvikling (Reel Porteføljestyring)", template="plotly_dark", height=350)
                 st.plotly_chart(fig_eq, width="stretch")
 
     if run_opt:
-        with st.spinner("🤖 Trin 1: Præparerer og låser markedsdata for universet..."):
-            # Her sker magien: Vi beregner kun indikatorer ÉN gang for alle 20 tests!
-            aktie_data, kronologisk_tid = prepare_backtest_signals(all_data, mode=bt_mode, min_score=bt_min_score, start_date=backtest_start_date)
+        with st.spinner("🤖 Kører Grid-Search optimering..."):
+            target_range = [2.5, 3.0, 3.5, 4.0, 4.5]
+            stop_range = [1.25, 1.5, 1.75, 2.0]
+            opt_results = []
             
-        if not aktie_data:
-            st.error("Ingen data at optimere på.")
-        else:
-            with st.spinner("🤖 Trin 2: Afvikler lynhurtig Grid-Search på tværs af parametre..."):
-                target_range = [2.5, 3.0, 3.5, 4.0, 4.5]
-                stop_range = [1.25, 1.5, 1.75, 2.0]
-                opt_results = []
-                
-                for t_mult in target_range:
-                    for s_mult in stop_range:
-                        # Kalder den ultrahurtige simuleringsmotor uden spild-beregninger
-                        t_df = run_vectorized_backtest_fast(aktie_data, kronologisk_tid, target_mult=t_mult, sl_mult=s_mult, holding_days=bt_hold, bt_capital=bt_capital)
-                        if not t_df.empty:
-                            t_trades = len(t_df)
-                            t_win_rate = (len(t_df[t_df["Afkast %"] > 0]) / t_trades) * 100
-                            t_gain = t_df[t_df["Afkast %"] > 0]["Gevinst DKK"].sum()
-                            t_loss = abs(t_df[t_df["Afkast %"] <= 0]["Gevinst DKK"].sum())
-                            t_pf = t_gain / (t_loss if t_loss > 0 else 1.0)
-                            
-                            eq = bt_capital + t_df["Gevinst DKK"].sum()
-                            ret_pct = ((eq / bt_capital) - 1) * 100
-                            
-                            opt_results.append({
-                                "Target Mult": t_mult, "Stop Mult": s_mult, "Antal Trades": t_trades,
-                                "Win Rate": f"{t_win_rate:.1f}%", "Profit Factor": round(t_pf, 2),
-                                "Slutafkast %": round(ret_pct, 1), "Slutkapital DKK": int(eq)
-                            })
-                
-                if not opt_results:
-                    st.error("Kunne ikke optimere. Ingenting matchede dine kriterier i dette tidsinterval.")
-                else:
-                    opt_df = pd.DataFrame(opt_results).sort_values(by="Profit Factor", ascending=False)
-                    st.success("🎯 Optimering fuldført på få sekunder!")
-                    vinder = opt_df.iloc[0]
-                    st.info(f"🏆 **ANBEFALET OPSÆTNING:** Sæt dit Target til **{vinder['Target Mult']}x ATR** og dit Stop Loss til **{vinder['Stop Mult']}x ATR**. Det gav en Profit Factor på **{vinder['Profit Factor']}** under trailing-betingelser.")
-                    st.dataframe(opt_df, column_config={"Slutkapital DKK": st.column_config.NumberColumn("Slutkapital DKK", format="%d DKK")}, hide_index=True, width="stretch")
+            for t_mult in target_range:
+                for s_mult in stop_range:
+                    # RETTET HER: s_mult er ændret til sl_mult=s_mult
+                    t_df = run_vectorized_backtest(all_data, mode=bt_mode, min_score=bt_min_score, target_mult=t_mult, sl_mult=s_mult, holding_days=bt_hold, start_date=backtest_start_date)
+                    
+                    if not t_df.empty:
+                        t_trades = len(t_df)
+                        t_win_rate = (len(t_df[t_df["Afkast %"] > 0]) / t_trades) * 100
+                        t_gain = t_df[t_df["Afkast %"] > 0]["Gevinst DKK"].sum()
+                        t_loss = abs(t_df[t_df["Afkast %"] <= 0]["Gevinst DKK"].sum())
+                        t_pf = t_gain / (t_loss if t_loss > 0 else 1.0)
+                        
+                        eq = bt_capital + t_df["Gevinst DKK"].sum()
+                        ret_pct = ((eq / bt_capital) - 1) * 100
+                        
+                        opt_results.append({
+                            "Target Mult": t_mult, "Stop Mult": s_mult, "Antal Trades": t_trades,
+                            "Win Rate": f"{t_win_rate:.1f}%", "Profit Factor": round(t_pf, 2),
+                            "Slutafkast %": round(ret_pct, 1), "Slutkapital DKK": int(eq)
+                        })
+            
+            if not opt_results:
+                st.error("Kunne ikke optimere. Ingenting matchede dine kriterier i dette tidsinterval.")
+            else:
+                opt_df = pd.DataFrame(opt_results).sort_values(by="Profit Factor", ascending=False)
+                st.success("🎯 Optimering fuldført!")
+                vinder = opt_df.iloc[0]
+                st.info(f"🏆 **ANBEFALET OPSÆTNING:** Sæt dit Target til **{vinder['Target Mult']}x ATR** og dit Stop Loss til **{vinder['Stop Mult']}x ATR**. Det gav en Profit Factor på **{vinder['Profit Factor']}** under trailing-betingelser.")
+                st.dataframe(opt_df, column_config={"Slutkapital DKK": st.column_config.NumberColumn("Slutkapital DKK", format="%d DKK")}, hide_index=True, width="stretch")
+
