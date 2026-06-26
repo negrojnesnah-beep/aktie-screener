@@ -53,12 +53,6 @@ STAMDATA_NAVNE = {
     'SY1.DE': 'Symrise AG', 'VOW3.DE': 'Volkswagen Vz', 'VNA.DE': 'Vonovia SE', 
     'QIA.DE': 'Qiagen N.V.', 'ZAL.DE': 'Zalando SE', 'HNR1.DE': 'Hannover Rück',
     
-    # S&P 500
-    'AAPL': 'Apple Inc.', 'MSFT': 'Microsoft Corp.', 'NVDA': 'NVIDIA Corp.', 
-    'AMZN': 'Amazon.com Inc.', 'META': 'Meta Platforms', 'GOOGL': 'Alphabet Inc.', 
-    'BRK-B': 'Berkshire Hathaway', 'LLY': 'Eli Lilly & Co.', 'AVGO': 'Broadcom Inc.', 
-    'TSLA': 'Tesla Inc.',
-
     # NASDAQ 40
     'MSFT': 'Microsoft', 'AAPL': 'Apple', 'NVDA': 'NVIDIA', 'AMZN': 'Amazon',
     'META': 'Meta Platforms', 'GOOGL': 'Alphabet A', 'GOOG': 'Alphabet C', 
@@ -76,7 +70,6 @@ STAMDATA_NAVNE = {
 }
 
 OMXC25_TICKERS = ['ALSYDB.CO', 'AMBU-B.CO', 'BAVA.CO', 'CARL-B.CO', 'COLO-B.CO', 'DANSKE.CO', 'DEMANT.CO', 'DSV.CO', 'FLS.CO', 'GMAB.CO', 'GN.CO', 'ISS.CO', 'JYSK.CO', 'MAERSK-A.CO', 'MAERSK-B.CO', 'NKT.CO', 'NSIS-B.CO', 'NOVO-B.CO', 'ORSTED.CO', 'PNDORA.CO', 'ROCK-B.CO', 'RBREW.CO', 'TRYG.CO', 'VWS.CO', 'ZEAL.CO']
-SP500_SAMPLE = ['AAPL', 'MSFT', 'NVDA', 'AMZN', 'META', 'GOOGL', 'BRK-B', 'LLY', 'AVGO', 'TSLA']
 DAX_TICKERS = ['ADS.DE', 'AIR.DE', 'ALV.DE', 'BAS.DE', 'BAYN.DE', 'BMW.DE', 'CBK.DE', 'CON.DE', 
     '1COV.DE', 'DB1.DE', 'DBK.DE', 'DHL.DE', 'DTE.DE', 'DTG.DE', 'EOAN.DE', 'FME.DE', 
     'FRE.DE', 'HEI.DE', 'HEN3.DE', 'HNR1.DE', 'IFX.DE', 'MBG.DE', 'MRK.DE', 'MTX.DE', 
@@ -92,16 +85,14 @@ nasdaq40_tickers = [
 st.sidebar.header("⚙️ Dashboard Indstillinger")
 univers_valg = st.sidebar.selectbox(
     "Index eller inputmetode",
-    ["OMXC25 (Danmark)", "DAX (Tyskland — Komplet 40)", "S&P 500 (Uddrag)", "NASDAQ 40", "Brugerdefineret Tickerliste"],
+    ["OMXC25", "DAX", "NASDAQ 40", "Brugerdefineret Tickerliste"],
     index=0
 )
 
-if univers_valg == "OMXC25 (Danmark)":
+if univers_valg == "OMXC25":
     valgte_tickers = OMXC25_TICKERS
-elif univers_valg == "DAX (Tyskland — Komplet 40)":
+elif univers_valg == "DAX":
     valgte_tickers = DAX_TICKERS
-elif univers_valg == "S&P 500 (Uddrag)":
-    valgte_tickers = SP500_SAMPLE
 elif univers_valg == "NASDAQ 40":   
     valgte_tickers = nasdaq40_tickers
 else:
